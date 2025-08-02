@@ -34,7 +34,8 @@ def main():
         pool_id = client.create_pool(
             max_challengers=10,
             game_description="test",
-            creator_deposit=100 * 10**18  # 500 tokens
+            creator_deposit=100 * 10**18,  # 100 tokens
+            settlement_time=3600  # 1小时结算时间
         )
     
     
@@ -47,26 +48,41 @@ def main():
             print("\n--- 示例4: 查看当前挑战费用 ---")
             client.get_current_challenge_fee(pool_id)
             
-            # # 示例5: 检查参与资格
-            print("\n--- 示例5: 检查参与资格 ---")
+            # 示例5: 检查是否可以结算失败
+            print("\n--- 示例5: 检查结算失败资格 ---")
+            client.can_settle_failure(pool_id)
+            
+            # 示例6: 获取剩余结算时间
+            print("\n--- 示例6: 获取剩余结算时间 ---")
+            client.get_remaining_settlement_time(pool_id)
+            
+            # 示例7: 检查参与资格
+            print("\n--- 示例7: 检查参与资格 ---")
             client.can_participate(pool_id, client.address)
             
-            # 示例6: 向池子充值（作为挑战者）
-            print("\n--- 示例6: 向池子充值 ---")
+            # 示例8: 向池子充值（作为挑战者）
+            print("\n--- 示例8: 向池子充值 ---")
             success = client.deposit_to_pool(pool_id)
             
             if success:
-                # 示例7: 再次查看池子详情（查看变化）
-                print("\n--- 示例7: 充值后的池子详情 ---")
+                # 示例9: 再次查看池子详情（查看变化）
+                print("\n--- 示例9: 充值后的池子详情 ---")
                 client.get_pool_details(pool_id)
                 
-                # 示例8: 查看新的挑战费用
-                print("\n--- 示例8: 新的挑战费用 ---")
+                # 示例10: 查看新的挑战费用
+                print("\n--- 示例10: 新的挑战费用 ---")
                 client.get_current_challenge_fee(pool_id)
                 
-                # 示例9: 结算池子
-                print("\n--- 示例9: 结算池子 ---")
-                client.settle_pool(pool_id, client.address, True)  # 假设成功
+                # 示例11: 结算池子（成功）
+                print("\n--- 示例11: 结算池子（成功） ---")
+                client.settle_pool(pool_id, client.address, True)
+                
+                # 示例12: 尝试结算失败（需要等待时间）
+                print("\n--- 示例12: 尝试结算失败 ---")
+                if client.can_settle_failure(pool_id):
+                    client.settle_pool(pool_id, client.address, False)
+                else:
+                    print("时间未到，无法结算失败")
         
         print("\n=== 示例完成 ===")
         

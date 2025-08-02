@@ -17,6 +17,7 @@ contract WordGambling is ReentrancyGuard, Ownable {
         PoolStatus status;
         uint256 createdAt;
         uint256 settledAt;
+        uint256 settlementTime;           // 允许结算的时间（秒）
         address winner;
         string gameDescription;
         uint256 challengeFeePercentage;   // 挑战费用百分比（10% = 1000）
@@ -28,7 +29,7 @@ contract WordGambling is ReentrancyGuard, Ownable {
         uint256 timestamp;
     }
 
-    event PoolCreated(uint256 indexed poolId, address indexed creator, uint256 creatorDeposit, uint256 maxChallengers, uint256 challengeFeePercentage, string gameDescription);
+    event PoolCreated(uint256 indexed poolId, address indexed creator, uint256 creatorDeposit, uint256 maxChallengers, uint256 challengeFeePercentage, uint256 settlementTime, string gameDescription);
     event ChallengerDeposited(uint256 indexed poolId, address indexed challenger, uint256 amount);
     event PoolSettled(uint256 indexed poolId, address indexed winner, uint256 totalAmount, uint256 feeAmount);
     event PoolCancelled(uint256 indexed poolId);
@@ -55,11 +56,13 @@ contract WordGambling is ReentrancyGuard, Ownable {
     function createPool(
         uint256 maxChallengers,
         string memory gameDescription, 
-        uint256 creatorDeposit
+        uint256 creatorDeposit,
+        uint256 settlementTime
     ) external nonReentrant {
         require(creatorDeposit > 0, "Creator deposit must be greater than 0");
         require(maxChallengers > 0, "Max challengers must be greater than 0");
         require(bytes(gameDescription).length > 0, "Game description cannot be empty");
+        require(settlementTime > 0, "Settlement time must be greater than 0");
         require(wordFunToken.allowance(msg.sender, address(this)) >= creatorDeposit, "Insufficient WordFunToken allowance");
         require(wordFunToken.balanceOf(msg.sender) >= creatorDeposit, "Insufficient WordFunToken balance");
 
@@ -76,13 +79,14 @@ contract WordGambling is ReentrancyGuard, Ownable {
             status: PoolStatus.Active,
             createdAt: block.timestamp,
             settledAt: 0,
+            settlementTime: settlementTime,
             winner: address(0),
             gameDescription: gameDescription,
             currentChallengerCount: 0,
             challengeFeePercentage: CHALLENGE_FEE_PERCENTAGE
         });
 
-        emit PoolCreated(poolId, msg.sender, creatorDeposit, maxChallengers, CHALLENGE_FEE_PERCENTAGE, gameDescription);
+        emit PoolCreated(poolId, msg.sender, creatorDeposit, maxChallengers, CHALLENGE_FEE_PERCENTAGE, settlementTime, gameDescription);
     }
 
     function depositToPool(uint256 poolId) external nonReentrant {
@@ -134,14 +138,18 @@ contract WordGambling is ReentrancyGuard, Ownable {
 
         uint256 totalAmount = pool.creatorDeposit + pool.totalChallengerDeposits;
         uint256 feeAmount = (totalAmount * platformFee) / FEE_DENOMINATOR;
-        uint256 winnerAmount = totalAmount - feeAmount;
 
         if (isSuccess) {
             // 挑战成功：获胜者获得池子所有资金（扣除平台费用）
+            uint256 winnerAmount = totalAmount - feeAmount;
             require(wordFunToken.transfer(winner, winnerAmount), "Transfer to winner failed");
         } else {
-            // 挑战失败：获胜者获得池子所有资金（扣除平台费用），挑战者资金被罚没
-            require(wordFunToken.transfer(winner, winnerAmount), "Transfer to winner failed");
+            // 挑战失败：检查是否达到结算时间
+            require(block.timestamp >= pool.createdAt + pool.settlementTime, "Settlement time not reached");
+            
+            // 创建者获得池子所有资金（扣除平台费用）
+            uint256 creatorAmount = totalAmount - feeAmount;
+            require(wordFunToken.transfer(pool.creator, creatorAmount), "Transfer to creator failed");
         }
 
         // 转移平台费用给合约拥有者
@@ -208,6 +216,28 @@ contract WordGambling is ReentrancyGuard, Ownable {
         Pool storage pool = pools[poolId];
         uint256 currentPoolTotal = pool.creatorDeposit + pool.totalChallengerDeposits;
         return (currentPoolTotal * pool.challengeFeePercentage) / FEE_DENOMINATOR;
+    }
+
+    /**
+     * @dev 检查是否可以结算失败
+     * @param poolId 池子ID
+     */
+    function canSettleFailure(uint256 poolId) external view returns (bool) {
+        Pool storage pool = pools[poolId];
+        return block.timestamp >= pool.createdAt + pool.settlementTime;
+    }
+
+    /**
+     * @dev 获取池子的剩余结算时间
+     * @param poolId 池子ID
+     */
+    function getRemainingSettlementTime(uint256 poolId) external view returns (uint256) {
+        Pool storage pool = pools[poolId];
+        if (block.timestamp >= pool.createdAt + pool.settlementTime) {
+            return 0; // 已经可以结算
+        } else {
+            return pool.createdAt + pool.settlementTime - block.timestamp;
+        }
     }
 
     /**
@@ -313,6 +343,7 @@ contract WordGambling is ReentrancyGuard, Ownable {
         PoolStatus status,
         uint256 createdAt,
         uint256 settledAt,
+        uint256 settlementTime,
         address winner,
         string memory gameDescription,
         uint256 maxChallengers,
@@ -327,6 +358,7 @@ contract WordGambling is ReentrancyGuard, Ownable {
             pool.status,
             pool.createdAt,
             pool.settledAt,
+            pool.settlementTime,
             pool.winner,
             pool.gameDescription,
             pool.maxChallengers,

@@ -123,8 +123,8 @@ class WordGamblingClient:
         
         return tx_hash is not None
     
-    def create_pool(self, max_challengers: int, game_description: str, creator_deposit: int):
-        print(f"创建池子: 最大挑战者={max_challengers}, 描述='{game_description}', 存款={creator_deposit / 10**18} tokens")
+    def create_pool(self, max_challengers: int, game_description: str, creator_deposit: int, settlement_time: int):
+        print(f"创建池子: 最大挑战者={max_challengers}, 描述='{game_description}', 存款={creator_deposit / 10**18} tokens, 结算时间={settlement_time}秒")
         
         if not self.approve_tokens(self.word_gambling.address, creator_deposit):
             print("授权失败")
@@ -135,7 +135,8 @@ class WordGamblingClient:
             'createPool',
             max_challengers,
             game_description,
-            creator_deposit
+            creator_deposit,
+            settlement_time
         )
         
         if tx_hash:
@@ -193,10 +194,14 @@ class WordGamblingClient:
                 'creator_deposit': details[1] / 10**18,
                 'total_challenger_deposits': details[2] / 10**18,
                 'status': details[3],
-                'game_description': details[7],
-                'max_challengers': details[8],
-                'current_challenger_count': details[9],
-                'challenge_fee_percentage': details[10] / 100
+                'created_at': details[4],
+                'settled_at': details[5],
+                'settlement_time': details[6],
+                'winner': details[7],
+                'game_description': details[8],
+                'max_challengers': details[9],
+                'current_challenger_count': details[10],
+                'challenge_fee_percentage': details[11] / 100
             }
             
             print(f"池子 {pool_id} 详情:")
@@ -204,6 +209,10 @@ class WordGamblingClient:
             print(f"  创建者存款: {pool_info['creator_deposit']} tokens")
             print(f"  挑战者总存款: {pool_info['total_challenger_deposits']} tokens")
             print(f"  状态: {pool_info['status']}")
+            print(f"  创建时间: {pool_info['created_at']}")
+            print(f"  结算时间: {pool_info['settled_at'] if pool_info['settled_at'] > 0 else '未结算'}")
+            print(f"  结算等待时间: {pool_info['settlement_time']}秒")
+            print(f"  获胜者: {pool_info['winner'] if pool_info['winner'] != '0x0000000000000000000000000000000000000000' else '未确定'}")
             print(f"  游戏描述: {pool_info['game_description']}")
             print(f"  最大挑战者: {pool_info['max_challengers']}")
             print(f"  当前挑战者: {pool_info['current_challenger_count']}")
@@ -223,6 +232,29 @@ class WordGamblingClient:
         except Exception as e:
             print(f"获取挑战费用失败: {e}")
             return None
+
+    def can_settle_failure(self, pool_id: int) -> bool:
+        """检查是否可以结算失败"""
+        try:
+            can_settle = self.word_gambling.functions.canSettleFailure(pool_id).call()
+            print(f"池子 {pool_id} 是否可以结算失败: {can_settle}")
+            return can_settle
+        except Exception as e:
+            print(f"检查结算失败资格失败: {e}")
+            return False
+
+    def get_remaining_settlement_time(self, pool_id: int) -> int:
+        """获取剩余结算时间（秒）"""
+        try:
+            remaining_time = self.word_gambling.functions.getRemainingSettlementTime(pool_id).call()
+            if remaining_time == 0:
+                print(f"池子 {pool_id} 已经可以结算失败")
+            else:
+                print(f"池子 {pool_id} 还需要等待 {remaining_time} 秒才能结算失败")
+            return remaining_time
+        except Exception as e:
+            print(f"获取剩余结算时间失败: {e}")
+            return -1
     
     def can_participate(self, pool_id: int, challenger: str) -> bool:
         try:
